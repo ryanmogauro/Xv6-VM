@@ -54,11 +54,6 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
   return &pgtab[PTX(va)];
 }
 
-//publicly accessible walkpgdir() call
-pte_t *getpte(pde_t *pgdir, const void *va){
-  return walkpgdir(pgdir, va, 0); //0 -> don't allocate
-}
-
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
 // be page-aligned.
@@ -388,6 +383,38 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
     va = va0 + PGSIZE;
   }
   return 0;
+}
+
+
+void pagefault(struct trapframe*tf){
+  uint fault_addr = PGROUNDDOWN(rcr2());
+  struct proc *p = myproc(); 
+
+  pte_t *pte = walkpgdir(p->pgdir, (void *)fault_addr, 0);
+
+  //unmapped -> kill
+  if(pte == 0 || *pte == 0){
+      goto kill;
+  }
+
+  //else if pag
+  else if(!(*pte & PTE_P)){
+    if(*pte & PTE_SWAPPED){
+      //handle later: swap logic
+    }
+    
+    //Zero-demand (new data: not in memory, not on disk)
+    else{
+      void *page = kalloc();
+      memset(page, 0, PGSIZE); 
+      *pte = v2p(page) | PTE_U | PTE_W | PTE_P;
+      invlpg(fault_addr);
+    }
+  }
+
+kill:
+  cprintf("segfault pid %d va 0x%x err %d\n", p->pid, rcr2(), tf->err);
+  p->killed = 1;
 }
 
 //PAGEBREAK!

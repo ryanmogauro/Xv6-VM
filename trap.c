@@ -78,18 +78,8 @@ trap(struct trapframe *tf)
     lapiceoi();
     break;
   case T_PGFLT:
-    uint fault_addr = rcr2();
-    pde_t *pgdir = myproc()->pgdir; 
-
-    pte_t *pte = getpte(pgdir, (void *)fault_addr);
-
-    if(pte && *pte_t != 0){
-      //true page fault
-      //swap and replace
-    } else{
-      //null ptr
-      //kill proc
-    }
+    pagefault(tf);
+    break;
 
   //PAGEBREAK: 13
   default:
