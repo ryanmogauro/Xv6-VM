@@ -403,11 +403,11 @@ void pagefault(struct trapframe*tf){
       //handle later: swap logic
     }
     
-    //Zero-demand (new data: not in memory, not on disk)
+    //Zero demand paging(new data -- not in memory, not on disk)
     else{
       void *page = kalloc();
       memset(page, 0, PGSIZE); 
-      *pte = v2p(page) | PTE_U | PTE_W | PTE_P;
+      *pte = V2P(page) | PTE_U | PTE_W | PTE_P;
       invlpg(fault_addr);
     }
   }
