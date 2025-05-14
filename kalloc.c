@@ -8,6 +8,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "spinlock.h"
+#include "swap.h"
 
 void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
@@ -79,30 +80,22 @@ kfree(char *v)
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
-char*
-kalloc(void)
-{
+char *kalloc(void){
   struct run *r;
 
-  if(kmem.use_lock)
-    acquire(&kmem.lock);
+retry:
+  acquire(&kmem.lock);
   r = kmem.freelist;
   if(r)
     kmem.freelist = r->next;
-  if(kmem.use_lock)
-    release(&kmem.lock);
+  release(&kmem.lock);
 
-  if(!r){
-    if(swap_out_global()){
-      acquire(&kmem.lock);
-      r = kmem.freelist;
-      if(r){
-        kmem.freelist = r->next;
-      }
-      release(&kmem.lock);
-    }
+  if(r == 0){
+    if(swap_ready && swap_out_global())
+      goto retry;
+    return 0;
   }
-  
 
+  memset((char*)r, 5, PGSIZE);
   return (char*)r;
 }

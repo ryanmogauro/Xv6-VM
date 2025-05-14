@@ -179,4 +179,6 @@ struct gatedesc {
   (gate).off_31_16 = (uint)(off) >> 16;                  \
 }
 
+#define invlpg(addr) asm volatile("invlpg (%0)" : : "r" (addr) : "memory")
+
 #endif

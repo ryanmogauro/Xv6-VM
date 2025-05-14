@@ -1,11 +1,17 @@
-#include "param.h"
 #include "types.h"
-#include "defs.h"
-#include "x86.h"
+
+#include "param.h"
 #include "memlayout.h"
+#include "fs.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "x86.h" 
+#include "traps.h"  
+#include "buf.h"
 #include "mmu.h"
+#include "defs.h"
 #include "proc.h"
-#include "elf.h"
+#include "swap.h"
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
@@ -386,36 +392,54 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 }
 
 
-void pagefault(struct trapframe*tf){
+void
+pagefault(struct trapframe *tf)
+{
   uint fault_addr = PGROUNDDOWN(rcr2());
-  struct proc *p = myproc(); 
+  struct proc *p  = myproc();
 
-  pte_t *pte = walkpgdir(p->pgdir, (void *)fault_addr, 0);
+  pte_t *pte = walkpgdir(p->pgdir, (void*)fault_addr, 0);
 
   //unmapped -> kill
-  if(pte == 0 || *pte == 0){
+  if(pte == 0 || *pte == 0)
+    goto kill;
+
+  if(*pte & PTE_P)
+    goto kill;
+
+  //page on disk
+  if(*pte & PTE_SWAPPED){
+    int slot = (*pte >> 12);
+    char *kva = kalloc();
+    if(kva == 0)
       goto kill;
+
+    read_page_from_disk(kva, slot);
+    swap_free(slot);
+
+    *pte = V2P(kva) | (PTE_FLAGS(*pte) & 0x1FF) | PTE_P;
+    *pte &= ~PTE_SWAPPED;
+
+    invlpg((void*)fault_addr);   // flush old TLB entry
+    return;
   }
 
-  //else if pag
-  else if(!(*pte & PTE_P)){
-    if(*pte & PTE_SWAPPED){
-      //handle later: swap logic
-    }
-    
-    //Zero demand paging(new data -- not in memory, not on disk)
-    else{
-      void *page = kalloc();
-      memset(page, 0, PGSIZE); 
-      *pte = V2P(page) | PTE_U | PTE_W | PTE_P;
-      invlpg(fault_addr);
-    }
-  }
+  //Demand zero
+  char *page = kalloc();
+  if(page == 0)
+    goto kill;
+
+  memset(page, 0, PGSIZE);
+  *pte = V2P(page) | PTE_U | PTE_W | PTE_P;
+  invlpg((void*)fault_addr);
+  return;
 
 kill:
-  cprintf("segfault pid %d va 0x%x err %d\n", p->pid, rcr2(), tf->err);
+  cprintf("segfault pid %d va 0x%x err 0x%x\n",
+          p->pid, rcr2(), tf->err);
   p->killed = 1;
 }
+
 
 //PAGEBREAK!
 // Blank page.

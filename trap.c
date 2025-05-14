@@ -78,6 +78,10 @@ trap(struct trapframe *tf)
     lapiceoi();
     break;
   case T_PGFLT:
+    if((tf->cs & 3) == 0 || myproc() == 0){
+      cprintf("kernel page fault, va 0x%x\n", rcr2());
+      panic("page fault");
+    }
     pagefault(tf);
     break;
 

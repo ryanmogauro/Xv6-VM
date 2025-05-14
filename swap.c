@@ -1,12 +1,31 @@
+// swap.c
+#include "types.h"
+#include "param.h"
+#include "memlayout.h"
+#include "fs.h"
+#include "defs.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "buf.h"
+#include "mmu.h"
+#include "proc.h"
 #include "swap.h"
+
+int swap_ready = 0;
+
+extern struct {
+  struct spinlock lock;
+  struct proc     proc[NPROC];
+} ptable;
 
 static uchar swapmap[SWAP_PAGES/8]; 
 static struct spinlock swaplock; 
 
 //initializes swapmap on disk
-void init_swap(void){
+void swap_init(void){
     initlock(&swaplock, "swap");
     memset(swapmap, 0, sizeof swapmap);
+    swap_ready = 1;
 }
 
 static int bit_is_set(int i){ 
@@ -21,7 +40,7 @@ static void bit_clear(int i){
   swapmap[i>>3] &= ~(1<<(i&7)); 
 }
 
-static int swap_alloc(void){
+int swap_alloc(void){
     acquire(&swaplock);
 
     for(int i = 0; i < SWAP_PAGES; i++){
@@ -30,31 +49,30 @@ static int swap_alloc(void){
             release(&swaplock); 
             return i;
         }
+    }
     release(&swaplock);
     return -1;
-    }
 }
 
-static void swap_free(int slot){
+void swap_free(int slot){
     acquire(&swaplock); 
     bit_clear(slot);
     release(&swaplock); 
 }
 
-static void write_page_to_disk(char *kva, int slot){
+void write_page_to_disk(char *kva, int slot){
     for(int i = 0; i < 8; i++){
         struct buf *b = bread(ROOTDEV, SWAP_START_BLOCK + slot*8 + i);
         memmove(b->data, kva+i*BSIZE, BSIZE);
-        brwirte(b); 
+        bwrite(b); 
         brelse(b); 
     }
 }
 
-
-static void write_page_from_disk(char *kva, int slot){
+void read_page_from_disk(char *kva, int slot){
     for (int i = 0; i < 8; i++){
         struct buf *b = bread(ROOTDEV, SWAP_START_BLOCK + slot*8 + i);
-        memmove(kva + i_BSIZE, b->data, BSIZE); 
+        memmove(kva + i*BSIZE, b->data, BSIZE); 
         brelse(b); 
     }
 }
@@ -62,9 +80,8 @@ static void write_page_from_disk(char *kva, int slot){
 //Proof of concept
 //O(# proc x # pt), optimize later if time
 int swap_out_global(void){
-    struct proc *p; 
 
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    for(struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++){
         if(p->state == UNUSED || p->pgdir == 0){
             continue;
         }
@@ -75,11 +92,11 @@ int swap_out_global(void){
                 continue;
             }
 
-            pte_t *pt = (*pte)P2V(PTE_ADDR(pde)); 
+            pte_t *pt = (pte_t*)P2V(PTE_ADDR(pde));
             for(uint ptx=0; ptx<NPTENTRIES; ptx++){
-                pte_t &pte = &pt[ptx];
+                pte_t *pte = &pt[ptx];
 
-                if(*pte & (PTE_P | PTE_U) != (PTE_P|PTE_U)){
+                if((*pte & (PTE_P | PTE_U)) != (PTE_P|PTE_U)){
                     continue; 
                 }
 
@@ -92,7 +109,7 @@ int swap_out_global(void){
                 write_page_to_disk(kva, slot); 
                 *pte = (slot << 12) | PTE_SWAPPED | (PTE_FLAGS(*pte)&0x1FF); 
                 invlpg((void*)PGADDR(pdx, ptx, 0)); 
-                kree(kva); 
+                kfree(kva); 
                 return 1;
             }
         }

@@ -5,6 +5,7 @@
 #include "mmu.h"
 #include "proc.h"
 #include "x86.h"
+#include "swap.h"
 
 static void startothers(void);
 static void mpmain(void)  __attribute__((noreturn));
@@ -25,6 +26,7 @@ main(void)
   picinit();       // disable pic
   ioapicinit();    // another interrupt controller
   consoleinit();   // console hardware
+  swap_init();     //initialize swap block
   uartinit();      // serial port
   pinit();         // process table
   tvinit();        // trap vectors

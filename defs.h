@@ -9,6 +9,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct trapframe; 
 
 // bio.c
 void            binit(void);
@@ -100,6 +101,10 @@ int             pipealloc(struct file**, struct file**);
 void            pipeclose(struct pipe*, int);
 int             piperead(struct pipe*, char*, int);
 int             pipewrite(struct pipe*, char*, int);
+
+
+//vm.c
+void            pagefault(struct trapframe *);
 
 //PAGEBREAK: 16
 // proc.c
